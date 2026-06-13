@@ -10,7 +10,8 @@
 // ---------------- OLED ----------------
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, -1);
+Adafruit_SSD1306 display0(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire,  -1);  // Wire  (SDA=21, SCL=22)
+Adafruit_SSD1306 display1(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, -1);  // Wire1 (SDA=25, SCL=26)
 
 // ---------------- INA219 ----------------
 uint8_t inaAddrs[4] = {0x40, 0x41, 0x44, 0x45};
@@ -93,26 +94,29 @@ void writeRow(int mA0[4], int mA1[4]) {
 }
 
 // ---------------- OLED ----------------
-void drawGrid(const char* sdStatus, const char* btStatus, int mA0[4], int mA1[4]) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
+static void drawToDisplay(Adafruit_SSD1306& d, int busId, const char* sdStatus, const char* btStatus, int mA0[4], int mA1[4]) {
+  d.clearDisplay();
+  d.setTextSize(1);
+  d.setTextColor(SSD1306_WHITE);
 
-  display.setCursor(0, 0);
-  display.print(sdStatus);
-  display.setCursor(60, 0);
-  display.print(btStatus);
+  d.setCursor(0, 0);  d.printf("%d %s", busId, sdStatus);
+  d.setCursor(60, 0); d.print(btStatus);
 
   for (int i = 0; i < 4; i++) {
     int y = 16 + i * 12;
-    display.setCursor(0, y);
-    if (mA0[i] == -9999) display.print("    ");
-    else                  display.printf("%4d", mA0[i]);
-    display.setCursor(60, y);
-    if (mA1[i] == -9999) display.print("    ");
-    else                  display.printf("%4d", mA1[i]);
+    d.setCursor(0, y);
+    if (mA0[i] == -9999) d.print("    ");
+    else                  d.printf("%4d", mA0[i]);
+    d.setCursor(60, y);
+    if (mA1[i] == -9999) d.print("    ");
+    else                  d.printf("%4d", mA1[i]);
   }
-  display.display();
+  d.display();
+}
+
+void drawGrid(const char* sdStatus, const char* btStatus, int mA0[4], int mA1[4]) {
+  drawToDisplay(display0, 0, sdStatus, btStatus, mA0, mA1);
+  drawToDisplay(display1, 1, sdStatus, btStatus, mA0, mA1);
 }
 
 // ---------------- SETUP ----------------
@@ -137,12 +141,17 @@ void setup() {
   }
 
   // OLED
-  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("[OLED] Not found at 0x3C");
-  } else {
-    Serial.println("[OLED] OK");
-    display.clearDisplay();
-    display.display();
+  if (!display0.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+    Serial.println("[OLED0] Not found at 0x3C on Wire");
+  else {
+    Serial.println("[OLED0] OK");
+    display0.clearDisplay(); display0.display();
+  }
+  if (!display1.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+    Serial.println("[OLED1] Not found at 0x3C on Wire1");
+  else {
+    Serial.println("[OLED1] OK");
+    display1.clearDisplay(); display1.display();
   }
 
   // INA219 — report which are present
