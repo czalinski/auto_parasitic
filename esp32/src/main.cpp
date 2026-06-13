@@ -59,7 +59,10 @@ void startNewLogFile() {
 
   File f = SD.open(logPath, FILE_WRITE);
   if (f) {
-    f.println("time_ok,timestamp,b0c0_mA,b0c1_mA,b0c2_mA,b0c3_mA,b1c0_mA,b1c1_mA,b1c2_mA,b1c3_mA");
+    f.print("time_ok,timestamp");
+    for (int i = 0; i < 4; i++) f.printf(",W0_0x%02X_mA", inaAddrs[i]);
+    for (int i = 0; i < 4; i++) f.printf(",W1_0x%02X_mA", inaAddrs[i]);
+    f.println();
     f.close();
     Serial.printf("[SD] New log: %s\n", logPath.c_str());
   } else {
@@ -105,10 +108,10 @@ static void drawToDisplay(Adafruit_SSD1306& d, int busId, const char* sdStatus, 
   for (int i = 0; i < 4; i++) {
     int y = 16 + i * 12;
     d.setCursor(0, y);
-    if (mA0[i] == -9999) d.print("    ");
+    if (mA0[i] == -9999) d.print("----");
     else                  d.printf("%4d", mA0[i]);
     d.setCursor(60, y);
-    if (mA1[i] == -9999) d.print("    ");
+    if (mA1[i] == -9999) d.print("----");
     else                  d.printf("%4d", mA1[i]);
   }
   d.display();
@@ -212,12 +215,49 @@ void loop() {
     }
   }
 
-  // SD retry
+  // Every 5s: re-scan both I2C buses and re-probe any missing INA219s
+  static unsigned long lastI2CScan = 0;
+  if (millis() - lastI2CScan >= 5000) {
+    lastI2CScan = millis();
+
+    // Full bus scan
+    for (int bus = 0; bus < 2; bus++) {
+      TwoWire& w = bus == 0 ? Wire : Wire1;
+      bool anyFound = false;
+      for (byte addr = 1; addr < 127; addr++) {
+        w.beginTransmission(addr);
+        if (w.endTransmission() == 0) {
+          Serial.printf("[I2C] Wire%d 0x%02X\n", bus, addr);
+          anyFound = true;
+        }
+      }
+      if (!anyFound) Serial.printf("[I2C] Wire%d: nothing found\n", bus);
+    }
+
+    // Re-probe missing INA219s
+    for (int i = 0; i < 4; i++) {
+      if (!present0[i]) {
+        present0[i] = ina0[i].begin(&Wire);
+        Serial.printf("[INA] Wire  0x%02X: %s\n", inaAddrs[i], present0[i] ? "now found" : "absent");
+      }
+      if (!present1[i]) {
+        present1[i] = ina1[i].begin(&Wire1);
+        Serial.printf("[INA] Wire1 0x%02X: %s\n", inaAddrs[i], present1[i] ? "now found" : "absent");
+      }
+    }
+  }
+
+  // SD retry — throttled to every 3s
   if (!sdOK) {
-    sdOK = SD.begin(SD_CS);
-    if (sdOK) {
-      Serial.println("[SD] Card ready — starting log file");
-      startNewLogFile();
+    static unsigned long lastSDRetry = 0;
+    if (millis() - lastSDRetry >= 3000) {
+      lastSDRetry = millis();
+      sdOK = SD.begin(SD_CS);
+      Serial.printf("[SD] begin() returned %s\n", sdOK ? "true" : "false");
+      if (sdOK) {
+        Serial.println("[SD] Card ready — starting log file");
+        startNewLogFile();
+      }
     }
   }
 
