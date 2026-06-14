@@ -226,8 +226,9 @@ void loop() {
     else mA1[i] = (int)round(fabsf(ina1[i].getShuntVoltage_mV()) * 1000.0f / cal_mohm1[i]);
   }
 
-  // BT time sync — non-blocking, accumulate chars as they arrive
-  if (!timeSynced && SerialBT.hasClient()) {
+  // BT time sync — hasClient() must always be called so the library state
+  // machine can detect disconnects and accept new connections.
+  if (SerialBT.hasClient()) {
     while (SerialBT.available()) {
       char c = (char)SerialBT.read();
       if (c == '\n') {
@@ -237,9 +238,11 @@ void loop() {
           struct timeval tv = { (time_t)ts, 0 };
           settimeofday(&tv, nullptr);
           SerialBT.println("OK");
-          timeSynced = true;
-          Serial.println("[BT] Time synced — starting new log file");
-          startNewLogFile();
+          if (!timeSynced) {
+            timeSynced = true;
+            Serial.println("[BT] Time synced — starting new log file");
+            startNewLogFile();
+          }
         }
         btBuffer = "";
       } else {

@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 import socket
 
-import ADS1263
 import RPi.GPIO as GPIO
 
 # -------- CONFIG --------
@@ -32,12 +31,7 @@ DIVIDER_RATIO = (R_TOP + R_BOT) / R_BOT
 
 CSV_HEADER = ["timestamp", "raw_volt_V", "battery_voltage_V", "raw_shunt_V", "current_A"]
 
-# -------- INIT ADC --------
 GPIO.setmode(GPIO.BCM)
-
-adc = ADS1263.ADS1263()
-adc.ADS1263_init_ADC1(vref='ADS1263_2_5V', rate='ADS1263_100SPS')
-adc.ADS1263_SetMode(1)   # differential mode
 
 # -------- LOG FILE CREATION --------
 def start_new_log_file():
@@ -45,16 +39,13 @@ def start_new_log_file():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     current_hour = datetime.now().strftime("%Y%m%d_%H")
     log_path = f"{LOG_DIR}/{hostname}_log_{timestamp}.csv"
-
     print(f"[INFO] Creating new log file: {log_path}")
-
     with open(log_path, "w", newline="") as f:
         csv.writer(f).writerow(CSV_HEADER)
 
 start_new_log_file()
 
 # -------- HELPERS --------
-
 def sync_time_to_esp32():
     sock = None
     try:
@@ -79,8 +70,22 @@ def read_channel(idx):
     adc.ADS1263_WaitDRDY()
     return adc.ADS1263_Read_ADC_Data() * 2.5 / 0x7FFFFFFF
 
-# -------- STARTUP --------
+# -------- STARTUP: BT sync before anything else --------
 sync_time_to_esp32()
+
+# -------- INIT ADC --------
+adc = None
+try:
+    import ADS1263
+    _adc = ADS1263.ADS1263()
+    ret = _adc.ADS1263_init_ADC1(vref='ADS1263_2_5V', rate='ADS1263_100SPS')
+    if ret == 0:
+        _adc.ADS1263_SetMode(1)
+        adc = _adc
+    else:
+        print("[ADC] Init returned error — hat not present?")
+except Exception as e:
+    print(f"[ADC] Init failed: {e} — running without ADC")
 
 # -------- MAIN LOOP --------
 try:
@@ -93,13 +98,17 @@ try:
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        raw_volt = read_channel(VOLTAGE_CHANNEL)
-        battery_voltage = abs(raw_volt) * DIVIDER_RATIO
+        if adc is not None:
+            raw_volt = read_channel(VOLTAGE_CHANNEL)
+            battery_voltage = abs(raw_volt) * DIVIDER_RATIO
 
-        raw_shunt = read_channel(SHUNT_CHANNEL)
-        current_A = abs(raw_shunt) / SHUNT_RESISTANCE
+            raw_shunt = read_channel(SHUNT_CHANNEL)
+            current_A = abs(raw_shunt) / SHUNT_RESISTANCE
 
-        row = [timestamp, raw_volt, battery_voltage, raw_shunt, current_A]
+            row = [timestamp, raw_volt, battery_voltage, raw_shunt, current_A]
+        else:
+            row = [timestamp, None, None, None, None]
+
         print("ROW:", row)
 
         with open(log_path, "a", newline="") as f:
@@ -111,6 +120,7 @@ except KeyboardInterrupt:
     print("[INFO] Keyboard interrupt — exiting")
 
 finally:
-    print("[INFO] Cleaning up GPIO and ADC")
-    adc.ADS1263_Exit()
+    print("[INFO] Cleaning up")
+    if adc is not None:
+        adc.ADS1263_Exit()
     GPIO.cleanup()

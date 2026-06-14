@@ -201,12 +201,11 @@ class ADS1263:
         sum += 0x9b
         return (sum & 0xff) ^ byt
 
-    # Wait for DRDY
+    # Wait for DRDY — uses GPIO edge detection (epoll) so CPU is idle while waiting
     def ADS1263_WaitDRDY(self):
-        for _ in range(400000):
-            if config.digital_read(self.drdy_pin) == 0:
-                return
-        print("DRDY timeout")
+        result = GPIO.wait_for_edge(self.drdy_pin, GPIO.FALLING, timeout=2000)
+        if result is None:
+            print("DRDY timeout")
 
     # Read chip ID
     def ADS1263_ReadChipID(self):
@@ -270,7 +269,7 @@ class ADS1263:
     # Read ADC1 data
     def ADS1263_Read_ADC_Data(self):
         config.digital_write(self.cs_pin, GPIO.LOW)
-        while True:
+        for _ in range(100):
             config.spi_writebyte([ADS1263_CMD['CMD_RDATA1']])
             if config.spi_readbytes(1)[0] & 0x40:
                 break
