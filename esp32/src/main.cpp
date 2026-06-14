@@ -32,11 +32,36 @@ bool timeSynced = false;
 String btBuffer = "";
 
 // ---------------- CALIBRATION ----------------
-float cal_expected = 15.0;
-float cal_measured0[4] = {15.0, 15.0, 15.0, 15.0};
-float cal_measured1[4] = {15.0, 15.0, 15.0, 15.0};
-float cal_factor0[4];
-float cal_factor1[4];
+// Shunt resistance in milliohms per channel; 0 = no cal file found.
+// Files: /cal_W0_0x40.txt etc., written by the esp32cal firmware.
+float cal_mohm0[4] = {0};
+float cal_mohm1[4] = {0};
+
+static String calPath(int bus, int i) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "/cal_W%d_0x%02X.txt", bus, inaAddrs[i]);
+  return String(buf);
+}
+
+static void loadCalFiles() {
+  for (int i = 0; i < 4; i++) {
+    for (int bus = 0; bus < 2; bus++) {
+      float& slot = (bus == 0) ? cal_mohm0[i] : cal_mohm1[i];
+      String path = calPath(bus, i);
+      if (!SD.exists(path.c_str())) continue;
+      File f = SD.open(path.c_str());
+      if (!f) continue;
+      String s = f.readStringUntil('\n');
+      f.close();
+      s.trim();
+      float v = s.toFloat();
+      if (v > 0) {
+        slot = v;
+        Serial.printf("[CAL] Loaded %s = %.3f mOhm\n", path.c_str(), v);
+      }
+    }
+  }
+}
 
 // ---------------- HELPERS ----------------
 static void fillTime(const char* fmt, char* buf, size_t len) {
@@ -89,9 +114,9 @@ void writeRow(int mA0[4], int mA1[4]) {
   f.print(timeSynced ? 1 : 0);
   f.print(",");
   f.print(ts);
-  // Empty field (nothing between commas) = missing sample — Excel/pandas treat as null
-  for (int i = 0; i < 4; i++) { f.print(","); if (mA0[i] != -9999) f.print(mA0[i]); }
-  for (int i = 0; i < 4; i++) { f.print(","); if (mA1[i] != -9999) f.print(mA1[i]); }
+  // Empty field = missing or uncalibrated — Excel/pandas treat as null
+  for (int i = 0; i < 4; i++) { f.print(","); if (mA0[i] >= 0) f.print(mA0[i]); }
+  for (int i = 0; i < 4; i++) { f.print(","); if (mA1[i] >= 0) f.print(mA1[i]); }
   f.println();
   f.close();
 }
@@ -108,11 +133,13 @@ static void drawToDisplay(Adafruit_SSD1306& d, int busId, const char* sdStatus, 
   for (int i = 0; i < 4; i++) {
     int y = 16 + i * 12;
     d.setCursor(0, y);
-    if (mA0[i] == -9999) d.print("----");
-    else                  d.printf("%4d", mA0[i]);
+    if      (mA0[i] == -9999) d.print("----");
+    else if (mA0[i] == -9998) d.print("NOCL");
+    else                      d.printf("%4d", mA0[i]);
     d.setCursor(60, y);
-    if (mA1[i] == -9999) d.print("----");
-    else                  d.printf("%4d", mA1[i]);
+    if      (mA1[i] == -9999) d.print("----");
+    else if (mA1[i] == -9998) d.print("NOCL");
+    else                      d.printf("%4d", mA1[i]);
   }
   d.display();
 }
@@ -165,14 +192,13 @@ void setup() {
     present1[i] = ina1[i].begin(&Wire1);
     Serial.printf("[INA219] 0x%02X  Wire=%s  Wire1=%s\n",
       inaAddrs[i], present0[i] ? "OK" : "--", present1[i] ? "OK" : "--");
-    cal_factor0[i] = cal_expected / cal_measured0[i];
-    cal_factor1[i] = cal_expected / cal_measured1[i];
   }
 
   // SD — one attempt, non-blocking
   sdOK = SD.begin(SD_CS);
   if (sdOK) {
     Serial.println("[SD] OK");
+    loadCalFiles();
     startNewLogFile();
   } else {
     Serial.println("[SD] Not found — will retry in loop");
@@ -187,10 +213,17 @@ void setup() {
 void loop() {
   int mA0[4], mA1[4];
 
-  // Read all present INA219s; -9999 = sensor not detected (sentinel)
+  // Read all present INA219s.
+  // Sentinels: -9999 = sensor absent, -9998 = present but no cal file.
+  // I(mA) = V_shunt(mV) * 1000 / R_shunt(mΩ)
   for (int i = 0; i < 4; i++) {
-    mA0[i] = present0[i] ? (int)round(ina0[i].getCurrent_mA() * cal_factor0[i]) : -9999;
-    mA1[i] = present1[i] ? (int)round(ina1[i].getCurrent_mA() * cal_factor1[i]) : -9999;
+    if (!present0[i])       mA0[i] = -9999;
+    else if (!cal_mohm0[i]) mA0[i] = -9998;
+    else mA0[i] = (int)round(ina0[i].getShuntVoltage_mV() * 1000.0f / cal_mohm0[i]);
+
+    if (!present1[i])       mA1[i] = -9999;
+    else if (!cal_mohm1[i]) mA1[i] = -9998;
+    else mA1[i] = (int)round(ina1[i].getShuntVoltage_mV() * 1000.0f / cal_mohm1[i]);
   }
 
   // BT time sync — non-blocking, accumulate chars as they arrive
@@ -256,6 +289,7 @@ void loop() {
       Serial.printf("[SD] begin() returned %s\n", sdOK ? "true" : "false");
       if (sdOK) {
         Serial.println("[SD] Card ready — starting log file");
+        loadCalFiles();
         startNewLogFile();
       }
     }
