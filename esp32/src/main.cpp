@@ -238,6 +238,11 @@ void loop() {
           struct timeval tv = { (time_t)ts, 0 };
           settimeofday(&tv, nullptr);
           SerialBT.println("OK");
+          // Send CSV header so Pi knows column layout for this session
+          SerialBT.print("time_ok,timestamp");
+          for (int i = 0; i < 4; i++) SerialBT.printf(",W0_0x%02X_mA", inaAddrs[i]);
+          for (int i = 0; i < 4; i++) SerialBT.printf(",W1_0x%02X_mA", inaAddrs[i]);
+          SerialBT.println();
           if (!timeSynced) {
             timeSynced = true;
             Serial.println("[BT] Time synced — starting new log file");
@@ -248,6 +253,16 @@ void loop() {
       } else {
         btBuffer += c;
       }
+    }
+
+    // Stream current sample to Pi — fire-and-forget, SD card is authoritative
+    if (timeSynced) {
+      char btTs[32];
+      fillTime("%Y-%m-%d %H:%M:%S", btTs, sizeof(btTs));
+      SerialBT.printf("1,%s", btTs);
+      for (int i = 0; i < 4; i++) { SerialBT.print(","); if (mA0[i] >= 0) SerialBT.print(mA0[i]); }
+      for (int i = 0; i < 4; i++) { SerialBT.print(","); if (mA1[i] >= 0) SerialBT.print(mA1[i]); }
+      SerialBT.println();
     }
   }
 

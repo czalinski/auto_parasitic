@@ -4,6 +4,7 @@ import csv
 import os
 from datetime import datetime
 import socket
+import threading
 
 import RPi.GPIO as GPIO
 
@@ -46,23 +47,55 @@ def start_new_log_file():
 start_new_log_file()
 
 # -------- HELPERS --------
-def sync_time_to_esp32():
-    sock = None
-    try:
-        sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-        sock.settimeout(10.0)
-        sock.connect((ESP32_BT_MAC, 1))
-        sock.sendall(f"{int(time.time())}\n".encode())
-        resp = sock.recv(16).decode().strip()
-        if resp == "OK":
-            print("[BT] Time sync acknowledged by ESP32")
-        else:
-            print(f"[BT] Unexpected response: {resp!r}")
-    except Exception as e:
-        print(f"[BT] Time sync failed: {e}")
-    finally:
-        if sock:
-            sock.close()
+def bt_receiver():
+    """Daemon thread: sync time to ESP32, then log its streamed CSV rows."""
+    while True:
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+            sock.settimeout(15.0)
+            sock.connect((ESP32_BT_MAC, 1))
+            sock.sendall(f"{int(time.time())}\n".encode())
+
+            buf = b""
+            got_ok = False
+            session_file = None
+            sock.settimeout(60.0)  # ESP32 streams every 500ms; 60s timeout catches stalls
+
+            while True:
+                chunk = sock.recv(256)
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    text = line.decode("utf-8", errors="replace").strip()
+                    if not text:
+                        continue
+                    if not got_ok:
+                        if text == "OK":
+                            got_ok = True
+                            print("[BT] Time sync acknowledged by ESP32")
+                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            session_file = f"{LOG_DIR}/{hostname}_bt_{ts}.csv"
+                            print(f"[BT] Logging ESP32 stream to {session_file}")
+                        # discard anything before OK
+                    else:
+                        # header line arrives first, then data rows — write all
+                        if session_file:
+                            with open(session_file, "a") as f:
+                                f.write(text + "\n")
+
+        except Exception as e:
+            print(f"[BT] {e}")
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+        time.sleep(30)  # wait before reconnect attempt
 
 
 def read_channel(idx):
@@ -70,8 +103,8 @@ def read_channel(idx):
     adc.ADS1263_WaitDRDY()
     return adc.ADS1263_Read_ADC_Data() * 2.5 / 0x7FFFFFFF
 
-# -------- STARTUP: BT sync before anything else --------
-sync_time_to_esp32()
+# -------- STARTUP: BT sync and streaming in background --------
+threading.Thread(target=bt_receiver, daemon=True).start()
 
 # -------- INIT ADC --------
 adc = None
