@@ -19,18 +19,12 @@ os.makedirs(LOG_DIR, exist_ok=True)
 hostname = socket.gethostname()
 
 # ADS1263 differential channel indices:
-#   0 = AIN0-AIN1  → battery voltage via 910k/120k divider
-#   1 = AIN2-AIN3  → shunt current via 5x 0.1Ω in parallel
-VOLTAGE_CHANNEL  = 0
-SHUNT_CHANNEL    = 1
+#   4 = AIN8-AIN9 → overall shunt current via 5x 0.1Ω in parallel
+SHUNT_CHANNEL    = 4  # AIN8-AIN9
 
 SHUNT_RESISTANCE = 0.02   # ohms (5x 0.1Ω in parallel)
 
-R_TOP = 910_000
-R_BOT = 120_000
-DIVIDER_RATIO = (R_TOP + R_BOT) / R_BOT
-
-CSV_HEADER = ["timestamp", "raw_volt_V", "battery_voltage_V", "raw_shunt_V", "current_A"]
+CSV_HEADER = ["timestamp", "raw_shunt_V", "current_A"]
 
 GPIO.setmode(GPIO.BCM)
 
@@ -132,15 +126,11 @@ try:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         if adc is not None:
-            raw_volt = read_channel(VOLTAGE_CHANNEL)
-            battery_voltage = abs(raw_volt) * DIVIDER_RATIO
-
             raw_shunt = read_channel(SHUNT_CHANNEL)
             current_A = abs(raw_shunt) / SHUNT_RESISTANCE
-
-            row = [timestamp, raw_volt, battery_voltage, raw_shunt, current_A]
+            row = [timestamp, raw_shunt, current_A]
         else:
-            row = [timestamp, None, None, None, None]
+            row = [timestamp, None, None]
 
         print("ROW:", row)
 
