@@ -219,11 +219,11 @@ void loop() {
   for (int i = 0; i < 4; i++) {
     if (!present0[i])       mA0[i] = -9999;
     else if (!cal_mohm0[i]) mA0[i] = -9998;
-    else mA0[i] = (int)round(ina0[i].getShuntVoltage_mV() * 1000.0f / cal_mohm0[i]);
+    else mA0[i] = (int)round(fabsf(ina0[i].getShuntVoltage_mV()) * 1000.0f / cal_mohm0[i]);
 
     if (!present1[i])       mA1[i] = -9999;
     else if (!cal_mohm1[i]) mA1[i] = -9998;
-    else mA1[i] = (int)round(ina1[i].getShuntVoltage_mV() * 1000.0f / cal_mohm1[i]);
+    else mA1[i] = (int)round(fabsf(ina1[i].getShuntVoltage_mV()) * 1000.0f / cal_mohm1[i]);
   }
 
   // BT time sync — non-blocking, accumulate chars as they arrive
