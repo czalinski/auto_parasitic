@@ -11,7 +11,7 @@ import RPi.GPIO as GPIO
 # -------- CONFIG --------
 SAMPLE_INTERVAL = 10.0
 
-ESP32_BT_MAC = "AA:BB:CC:DD:EE:FF"  # replace with your ESP32's Bluetooth MAC address
+ESP32_BT_MAC = "CC:7B:5C:F0:BD:82"  # BT MAC = WiFi base MAC (CC:7B:5C:F0:BD:80) + 2
 
 LOG_DIR = os.path.join(os.path.expanduser("~"), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)

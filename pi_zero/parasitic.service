@@ -3,10 +3,10 @@ Description=Parasitic Current Logger
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/auto_parasitic/pi_zero/AutoLogger.py
-WorkingDirectory=/home/pi/auto_parasitic/pi_zero
+ExecStart=/usr/bin/python3 /home/hwtest/auto_parasitic/pi_zero/AutoLogger.py
+WorkingDirectory=/home/hwtest/auto_parasitic/pi_zero
 Restart=on-failure
-User=pi
+User=hwtest
 
 [Install]
 WantedBy=multi-user.target
