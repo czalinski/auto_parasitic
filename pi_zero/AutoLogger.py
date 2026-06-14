@@ -2,7 +2,7 @@
 import time
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import socket
 import threading
 
@@ -37,8 +37,8 @@ GPIO.setmode(GPIO.BCM)
 # -------- LOG FILE CREATION --------
 def start_new_log_file():
     global log_path, current_hour
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    current_hour = datetime.now().strftime("%Y%m%d_%H")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    current_hour = datetime.now(timezone.utc).strftime("%Y%m%d_%H")
     log_path = f"{LOG_DIR}/{hostname}_log_{timestamp}.csv"
     print(f"[INFO] Creating new log file: {log_path}")
     with open(log_path, "w", newline="") as f:
@@ -76,7 +76,7 @@ def bt_receiver():
                         if text == "OK":
                             got_ok = True
                             print("[BT] Time sync acknowledged by ESP32")
-                            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                             session_file = f"{LOG_DIR}/{hostname}_bt_{ts}.csv"
                             print(f"[BT] Logging ESP32 stream to {session_file}")
                         # discard anything before OK
@@ -125,11 +125,11 @@ try:
     while True:
 
         # ---- HOURLY ROTATION ----
-        if datetime.now().strftime("%Y%m%d_%H") != current_hour:
+        if datetime.now(timezone.utc).strftime("%Y%m%d_%H") != current_hour:
             print("[INFO] Hour changed — rotating log file")
             start_new_log_file()
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
         if adc is not None:
             raw_volt = read_channel(VOLTAGE_CHANNEL)

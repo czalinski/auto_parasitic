@@ -255,8 +255,10 @@ void loop() {
       }
     }
 
-    // Stream current sample to Pi — fire-and-forget, SD card is authoritative
-    if (timeSynced) {
+    // Stream current sample to Pi every 10s — fire-and-forget, SD card is authoritative
+    static unsigned long lastBTSend = 0;
+    if (timeSynced && millis() - lastBTSend >= 10000) {
+      lastBTSend = millis();
       char btTs[32];
       fillTime("%Y-%m-%d %H:%M:%S", btTs, sizeof(btTs));
       SerialBT.printf("1,%s", btTs);
